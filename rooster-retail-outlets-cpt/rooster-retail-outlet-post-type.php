@@ -9,82 +9,140 @@
   Author URI: http://www.steven-senkus.com/
  */
 
-/* SETUP */
-/*  Set up the retail_outlet post type */
-add_action('init', 'rooster_retail_outlet_register_post_type');
-add_action('save_post', 'rooster_save_retail_outlet_meta', 1, 2); // save the custom fields
-add_filter('manage_edit-retail_outlet_columns', 'rooster_retail_outlet_admin_columns');
+class RoosterRetailOutletCPT {
 
-register_activation_hook(__FILE__, 'rooster_retail_outlet_plugin_activate');
-register_deactivation_hook(__FILE__, 'rooster_retail_outlet_plugin_deactivate');
+    public $cptName = 'retail_outlets';
+    
+    public function __construct() {
 
-/* Register the post type */
+        /* register the post type */
+        add_action('init', array($this, 'registerPostType'));
+        add_action('save_post', array($this, 'saveMetaData', ),1, 2); // save the custom fields
+        add_filter('manage_edit-'. $this->cptName .'_columns', array($this, 'adminColumns'));
+        add_action('manage_' . $this->cptName . '_posts_custom_column', array($this, 'columnContent'), 10, 2);
+        
+        register_activation_hook(__FILE__, 'activatePlugin');
+        register_deactivation_hook(__FILE__, 'deactivatePlugin');
 
-function rooster_retail_outlet_register_post_type() {
+    }
 
-    $retail_outlet_args = array(
-        'public' => true,
-        'query_var' => 'retail-outlet',
-        'rewrite' => false,
-        'supports' => array(
-            'title',
-            'revisions'
-        ),
-        'rewrite' => array('slug' => 'retail-outlets'),
-        'menu_icon' => '', // set this to an image per WP spec
-        'show_in_nav_menus' => false,
-        'has_archive' => true,
-        'register_meta_box_cb' => 'rooster_add_meta_boxes',
-        'labels' => array(
-            'name' => 'Retail Outlets',
-            'singular_name' => 'Retail Outlet',
-            'add_new' => 'Add New Retail Outlet',
-            'add_new_item' => 'Add New Retail Outlet',
-            'edit_item' => 'Edit Retail Outlet',
-            'new_item' => 'New Retail Outlet',
-            'view_item' => 'View Retail Outlet',
-            'search_items' => 'Search Retail Outlets',
-            'not_found' => 'No Retail Outlets Found',
-            'not_found_in_trash' => 'No Retail Outlets Found In Trash'
-        )
-    );
+    public function activatePlugin() {
+        flush_rewrite_rules();
+    }
 
-    /* Register the retail_outlets post type */
-    register_post_type('retail_outlets', $retail_outlet_args);
-}
+    public function deactivatePlugin() {
+        flush_rewrite_rules();
+    }
 
-function rooster_add_meta_boxes() {
-    add_meta_box('rooster_retail_outlets_form', 'Retail Outlet', 'rooster_retail_outlets_form', 'retail_outlets', 'normal', 'high');
-}
+    public function adminColumns($columns) {
 
-// Company Name Metabox
-function rooster_retail_outlets_form() {
-    global $post;
+        $columns = array(
+            'cb' => '<input type="checkbox" />',
+            'title' => __('Company Name'),
+            'address' => __('Address')
+        );
+        return $columns;
+    }
+
+    public function registerPostType() {
+        $cpt_name = 'retail_outlets';
+        $retail_outlet_args = array(
+            'public' => true,
+            'query_var' => 'retail-outlet',
+            'rewrite' => false,
+            'supports' => array(
+                'title',
+                'revisions'
+            ),
+            'rewrite' => array('slug' => 'retail-outlets'),
+            'menu_icon' => '', // set this to an image per WP spec
+            'show_in_nav_menus' => false,
+            'has_archive' => true,
+            'register_meta_box_cb' => array($this, 'addMetaBoxes'),
+            'labels' => array(
+                'name' => 'Retail Outlets',
+                'singular_name' => 'Retail Outlet',
+                'add_new' => 'Add New Retail Outlet',
+                'add_new_item' => 'Add New Retail Outlet',
+                'edit_item' => 'Edit Retail Outlet',
+                'new_item' => 'New Retail Outlet',
+                'view_item' => 'View Retail Outlet',
+                'search_items' => 'Search Retail Outlets',
+                'not_found' => 'No Retail Outlets Found',
+                'not_found_in_trash' => 'No Retail Outlets Found In Trash'
+            )
+        );
+
+        /* Register the retail_outlets post type */
+        register_post_type($cpt_name, $retail_outlet_args);
+    }
+
+// Save the Metabox Data    
+
+    public function saveMetaData($post_id, $post) {
+
+
+// verify this came from the our screen and with proper authorization,
+// because save_post can be triggered at other times
+        if (!wp_verify_nonce($_POST['eventmeta_noncename'], plugin_basename(__FILE__))) {
+            return $post->ID;
+        }
+// Is the user allowed to edit the post or page?
+        if (!current_user_can('edit_post', $post->ID))
+            return $post->ID;
+// OK, we're authenticated: we need to find and save the data
+// We'll put it into an array to make it easier to loop though.
+//$retail_outlet_meta['company_name'] = $_POST['company_name'];
+        $retail_outlet_meta['street_address_1'] = $_POST['street_address_1'];
+        $retail_outlet_meta['street_address_2'] = $_POST['street_address_2'];
+        $retail_outlet_meta['city'] = $_POST['city'];
+        $retail_outlet_meta['state'] = $_POST['state'];
+        $retail_outlet_meta['country'] = $_POST['country'];
+        $retail_outlet_meta['zip_code'] = $_POST['zip_code'];
+        $retail_outlet_meta['phone_number'] = $_POST['phone_number'];
+        $retail_outlet_meta['website_url'] = $_POST['website_url'];
+
+// Add values as custom fields
+        foreach ($retail_outlet_meta as $key => $value) {
+            if ($post->post_type == 'revision')
+                return; // Don't store custom data twice
+            $value = implode(',', (array) $value); // If $value is an array, make it a CSV (unlikely)
+            if (get_post_meta($post->ID, $key, FALSE)) { // If the custom field already has a value
+                update_post_meta($post->ID, $key, $value);
+            } else { // If the custom field doesn't have a value
+                add_post_meta($post->ID, $key, $value);
+            }
+            if (!$value)
+                delete_post_meta($post->ID, $key); // Delete if blank
+        }
+    }
+
+    public function addMetaBoxes() {
+        add_meta_box('rooster_retail_outlets_form', 'Retail Outlet', array($this, 'metaForm'), 'retail_outlets', 'normal', 'high');
+    }
+
+    public function metaForm() {
+
+
+
+        global $post;
 // Noncename needed to verify where the data originated
-    echo '<input type="hidden" name="eventmeta_noncename" id="eventmeta_noncename" value="' .
-    wp_create_nonce(plugin_basename(__FILE__)) . '" />';
+        echo '<input type="hidden" name="eventmeta_noncename" id="eventmeta_noncename" value="' .
+        wp_create_nonce(plugin_basename(__FILE__)) . '" />';
 // Get the location data if its already been entered
-    $meta_form_data['company_name'] = get_post_meta($post->ID, 'company_name', true);
-    $meta_form_data['street_address_1'] = get_post_meta($post->ID, 'street_address_1', true);
-    $meta_form_data['street_address_2'] = get_post_meta($post->ID, 'street_address_2', true);
-    $meta_form_data['city'] = get_post_meta($post->ID, 'city', true);
-    $meta_form_data['state'] = get_post_meta($post->ID, 'state', true);
-    $meta_form_data['country'] = get_post_meta($post->ID, 'country', true);
-    $meta_form_data['zip_code'] = get_post_meta($post->ID, 'zip_code', true);
-    $meta_form_data['phone_number'] = get_post_meta($post->ID, 'phone_number', true);
-    $meta_form_data['website_url'] = get_post_meta($post->ID, 'website_url', true);
+//$meta_form_data['company_name'] = get_post_meta($post->ID, 'company_name', true);
+        $meta_form_data['street_address_1'] = get_post_meta($post->ID, 'street_address_1', true);
+        $meta_form_data['street_address_2'] = get_post_meta($post->ID, 'street_address_2', true);
+        $meta_form_data['city'] = get_post_meta($post->ID, 'city', true);
+        $meta_form_data['state'] = get_post_meta($post->ID, 'state', true);
+        $meta_form_data['country'] = get_post_meta($post->ID, 'country', true);
+        $meta_form_data['zip_code'] = get_post_meta($post->ID, 'zip_code', true);
+        $meta_form_data['phone_number'] = get_post_meta($post->ID, 'phone_number', true);
+        $meta_form_data['website_url'] = get_post_meta($post->ID, 'website_url', true);
 
 // Echo out the field
-    echo <<< FORM_INPUT
+        echo <<< FORM_INPUT
     <table class="form-table">
-        <tr>
-            <td>
-                <label>Company Name</label>
-            </td>
-            <td>
-                <input type="text" name="company_name" value="{$meta_form_data['company_name']}" class="widefat" />
-            </td>
-        </tr>
         <tr>
             <td>
                 <label>Street Address 1</label>
@@ -206,57 +264,40 @@ function rooster_retail_outlets_form() {
         </tr>
     </table>                
 FORM_INPUT;
-}
-
-// Save the Metabox Data
-function rooster_save_retail_outlet_meta($post_id, $post) {
-    // verify this came from the our screen and with proper authorization,
-    // because save_post can be triggered at other times
-    if (!wp_verify_nonce($_POST['eventmeta_noncename'], plugin_basename(__FILE__))) {
-        return $post->ID;
     }
-    // Is the user allowed to edit the post or page?
-    if (!current_user_can('edit_post', $post->ID))
-        return $post->ID;
-    // OK, we're authenticated: we need to find and save the data
-    // We'll put it into an array to make it easier to loop though.
-    $retail_outlet_meta['company_name'] = $_POST['company_name'];
-    $retail_outlet_meta['street_address_1'] = $_POST['street_address_1'];
-    $retail_outlet_meta['street_address_2'] = $_POST['street_address_2'];
-    $retail_outlet_meta['city'] = $_POST['city'];
-    $retail_outlet_meta['state'] = $_POST['state'];
-    $retail_outlet_meta['country'] = $_POST['country'];
-    $retail_outlet_meta['zip_code'] = $_POST['zip_code'];
-    $retail_outlet_meta['phone_number'] = $_POST['phone_number'];
-    $retail_outlet_meta['website_url'] = $_POST['website_url'];
 
-    // Add values as custom fields
-    foreach ($retail_outlet_meta as $key => $value) {
-        if ($post->post_type == 'revision')
-            return; // Don't store custom data twice
-        $value = implode(',', (array) $value); // If $value is an array, make it a CSV (unlikely)
-        if (get_post_meta($post->ID, $key, FALSE)) { // If the custom field already has a value
-            update_post_meta($post->ID, $key, $value);
-        } else { // If the custom field doesn't have a value
-            add_post_meta($post->ID, $key, $value);
+    public function columnContent($column, $post_id) {
+        global $post;
+
+        switch ($column) {
+            case 'state':
+                /* Get the post meta. */
+                $state = get_post_meta($post_id, 'state', true);
+
+                /* If no duration is found, output a default message. */
+                if (empty($state))
+                    echo __('Unknown');
+
+                /* If there is a duration, append 'minutes' to the text string. */
+                else
+                    printf(__('%s'), $state);
+
+                break;
+
+            case 'address':
+                /* Get the post meta. */
+                $add1 = get_post_meta($post_id, 'street_address_1', true);
+                $add2 = get_post_meta($post_id, 'street_address_2', true);
+                $city = get_post_meta($post_id, 'city', true);
+                $state = get_post_meta($post_id, 'state', true);
+                $zip = get_post_meta($post_id, 'zip_code', true);
+
+                if (!empty($add2)) {
+                    $add1 .= '<br />';
+                }
+                printf(__('%s %s <br />%s, %s %s'), $add1, $add2, $city, $state, $zip);
         }
-        if (!$value)
-            delete_post_meta($post->ID, $key); // Delete if blank
     }
-}
 
-function rooster_retail_outlet_admin_columns($columns) {
-    $columns['company_name'] = 'Company Name';
-    unset($columns['comments']);
-    return $columns;
 }
-
-function rooster_retail_outlet_plugin_activate() {
-    // register taxonomies/post types here
-    flush_rewrite_rules();
-}
-
-function rooster_retail_outlet_plugin_deactivate() {
-    flush_rewrite_rules();
-}
-
+$rooster_outlets = new RoosterRetailOutletCPT();
